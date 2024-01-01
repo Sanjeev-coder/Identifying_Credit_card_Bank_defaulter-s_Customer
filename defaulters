@@ -1,0 +1,49 @@
+import apache_beam as beam
+
+
+p = beam.Pipeline()
+
+def calculate_points(element):
+
+  customer_id, first_name, last_name, realtionship_id, card_type, max_limit, spent, cash_withdrawn,payment_cleared,payment_date = element.split(',')
+  #[CT28383,Miyako,Burns,R_7488,Issuers,500,490,38,101,30-01-2018]
+  
+  spent = int(spent)    # spent = 490
+  payment_cleared = int(payment_cleared)   #payment_cleared = 101
+  max_limit = int(max_limit)               # max_limit = 500
+  
+  key_name = customer_id + ', ' + first_name + ' ' + last_name     # key_name = CT28383,Miyako Burns
+  defaulter_points = 0
+  
+  # payment_cleared is less than 70% of spent - give 1 point
+  if payment_cleared < (spent * 0.7): 
+     defaulter_points += 1                                                # defaulter_points =  1 
+ 
+  # spend is = 100% of max limit and any amount of payment is pending
+  if (spent == max_limit) and (payment_cleared < spent): 
+     defaulter_points += 1                                                # defaulter_points =  2
+   
+  if (spent == max_limit) and (payment_cleared < (spent*0.7)): 
+     defaulter_points += 1                                                # defaulter_points = 3
+                                  
+  return key_name, defaulter_points                                     # {CT28383,Miyako Burns  3}
+
+def format_result(sum_pair):
+  key_name, points = sum_pair
+  return str(key_name) + ', ' + str(points) + ' fraud_points'  
+
+
+card_defaulter = (
+                  p
+                  | 'Read credit card data' >> beam.io.ReadFromText('/content/cards.txt',skip_header_lines=1)
+                  | 'Calculate defaulter points' >> beam.Map(calculate_points)                            
+                  | 'Combine points for defaulters' >> beam.CombinePerKey(sum)                            # key--> CT28383,Miyako Burns   value --> 6 
+                  | 'Filter card defaulters' >> beam.Filter(lambda element: element[1] > 0)
+                  | 'Format output' >> beam.Map(format_result)                                            # CT28383,Miyako Burns,6 fraud_points
+                  | "print the output " >>beam.Map(print)
+
+                  )		
+
+
+				  		  
+p.run()	
